@@ -161,6 +161,7 @@ pub struct CavroMessage {
     pub error_code: ErrorCode,
     pub message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>,
     pub vrc: u8,
+    pub vrc_calculated: u8,
     pub device_type: CavroDeviceType,
 }
 
@@ -185,6 +186,7 @@ impl CavroMessage {
             error_code,
             message_data: Vec::new(),
             vrc: 0,
+            vrc_calculated: 0,
             device_type: CavroDeviceType::XYZ,
         }
     }
@@ -201,6 +203,7 @@ impl CavroMessage {
                 error_code: ErrorCode::VRCMismatch,
                 message_data: Vec::new(),
                 vrc: 0,
+                vrc_calculated: 0,
                 device_type: CavroDeviceType::XYZ,
             }
         }
@@ -209,8 +212,8 @@ impl CavroMessage {
         let vrc = message_data[msg_len - 1];
         // check the vrc
         let (_end, data_no_vrc) = message_data.split_last().unwrap();
-        let vrc_calc = calculate_vrc(data_no_vrc);
-        let error_code = if vrc_calc != vrc { ErrorCode::VRCMismatch } else { ErrorCode::NoError };
+        let vrc_calculated = calculate_vrc(data_no_vrc);
+        let error_code = if vrc_calculated != vrc { ErrorCode::VRCMismatch } else { ErrorCode::NoError };
 
         let (_start, data_with_end) = message_data.split_first().unwrap();
         let (data, _end) = data_with_end.split_last_chunk::<2>().unwrap();
@@ -221,23 +224,21 @@ impl CavroMessage {
             error_code,
             message_data,
             vrc,
+            vrc_calculated,
             device_type,
         }
     }
 
-    pub fn decode_to_command(message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>) -> Result<CavroCommand, ErrorCode> {
-        let cavro = Self::decode(message_data);
-        if cavro.error_code != ErrorCode::NoError {
-            return Err(cavro.error_code);
-        }
+    pub fn decode_to_command(&self) -> CavroCommand {
+        let cavro = Self::decode(self.message_data.clone());
 
         match cavro.device_type {
             CavroDeviceType::XYZ => {
                 let xyz = XYZMessage::decode(cavro);
-                Ok(CavroCommand::XYZ(XYZCommand::decode(xyz)))
+                CavroCommand::XYZ(XYZCommand::decode(xyz))
             }
             CavroDeviceType::PUMP => {
-                Ok(CavroCommand::Pump(PumpCommand::decode(cavro)))
+                CavroCommand::Pump(PumpCommand::decode(cavro))
             }
         }
     }
@@ -641,15 +642,14 @@ mod xyz_message_tests {
 
     #[test]
     fn test_decode_to_command() {
-        // Test XYZ Command
-        let xyz_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x41, 0x41, 0x41, 0x4d, 0x31, 0x30, 0x03, 0x00]).unwrap();
-        // Adjust VRC
-        let mut xyz_data = xyz_data;
-        let vrc = calculate_vrc(&xyz_data[0..xyz_data.len()-1]);
-        let last = xyz_data.len() - 1;
-        xyz_data[last] = vrc;
+        let xyz_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x41, 0x01, 0x08, 0x4d, 0x31, 0x30, 0x03, 0x05]).unwrap();
+        let cavro = CavroMessage::decode(xyz_data);
+        assert_eq!(cavro.error_code, ErrorCode::NoError);
+        assert_eq!(cavro.vrc_calculated, cavro.vrc);
+        assert_eq!(cavro.vrc, 0x05);
+        assert_eq!(cavro.device_type, CavroDeviceType::XYZ);
 
-        let cmd = CavroMessage::decode_to_command(xyz_data).unwrap();
+        let cmd = cavro.decode_to_command();
         match cmd {
             CavroCommand::XYZ(xyz) => {
                 assert_eq!(xyz.cmd, "M10");
@@ -659,14 +659,15 @@ mod xyz_message_tests {
         }
 
         // Test Pump Command
-        let pump_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x31, 0x01, 0x41, 0x03, 0x00]).unwrap();
+        let pump_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x41, 0x30, 0x32, 0x01, 0x31, 0x30, 0x03, 0x05]).unwrap();
         // Adjust VRC
         let mut pump_data = pump_data;
         let vrc = calculate_vrc(&pump_data[0..pump_data.len()-1]);
         let last = pump_data.len() - 1;
         pump_data[last] = vrc;
+        assert_eq!(vrc, 44);
 
-        let cmd = CavroMessage::decode_to_command(pump_data).unwrap();
+        let cmd = cavro.decode_to_command();
         match cmd {
             CavroCommand::Pump(pump) => {
                 assert_eq!(pump.pump_address, 0x31);
