@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std)]
 pub mod components;
-pub use crate::components::xyz_parser::{XYZMessageParser};
-pub use crate::components::xyz_message::{XYZMessage, XYZCommand, ErrorCode};
+pub use crate::components::xyz_parser::{CavroMessageParser};
+pub use crate::components::xyz_message::{XYZMessage, XYZCommand, ErrorCode, CavroMessage, PumpCommand};
 
 use core::*;
 
@@ -25,7 +25,7 @@ pub struct XYZRobot {
     // shutdown_mutex: Arc<(Mutex<bool>, Condvar)>,
     // raw_data_tx: Sender<u8>,
     // raw_data_rx: Receiver<u8>,
-    parser_xyz: XYZMessageParser,
+    parser_xyz: CavroMessageParser,
 }
 
 impl XYZRobot {
@@ -35,7 +35,7 @@ impl XYZRobot {
             // shutdown_mutex: Arc::new((Mutex::new(true), Condvar::new())),
             // raw_data_tx,
             // raw_data_rx,
-            parser_xyz: XYZMessageParser::new(),
+            parser_xyz: CavroMessageParser::new(),
         }
     }
 
@@ -47,7 +47,7 @@ impl XYZRobot {
         self.parser_xyz.add_data(data, count);
     }
 
-    pub fn process_next_message(&mut self) -> XYZMessage {
+    pub fn process_next_message(&mut self) -> CavroMessage {
         // Check if there is more data
         let msg = self.parser_xyz.parse();
         match msg.error_code {
@@ -106,6 +106,6 @@ mod library_tests {
 
         robot.add_data(&data2b, data2b.len());
         let msg = robot.process_next_message();
-        assert_eq!(msg.error_code, ErrorCode::InvalidArmAddress);
+        assert_eq!(msg.error_code, ErrorCode::NoError);
     }
 }
