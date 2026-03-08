@@ -12,8 +12,13 @@ use itoa;
 #[cfg(feature = "embedded")]
 use { defmt::{info, Format} };
 
-#[cfg(not(feature = "embedded"))]
+#[cfg(feature = "std")]
 use { log::{info} };
+
+#[cfg(all(not(feature = "embedded"), not(feature = "std")))]
+macro_rules! info {
+    ($($arg:tt)*) => {};
+}
 
 #[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, Default, PartialEq, Copy, Clone)]
@@ -38,8 +43,7 @@ pub enum CavroDeviceType {
     PUMP,
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct XYZCommand {
     pub error_code: ErrorCode,
     pub repeat: bool,
@@ -160,6 +164,13 @@ pub struct CavroMessage {
     pub device_type: CavroDeviceType,
 }
 
+#[cfg_attr(feature = "embedded", derive(Format))]
+#[derive(Debug, PartialEq, Clone)]
+pub enum CavroCommand {
+    XYZ(XYZCommand),
+    Pump(PumpCommand),
+}
+
 impl CavroMessage {
     #[cfg(test)]
     pub const MESSAGE_BUFFER_SIZE: usize = 32;
@@ -194,7 +205,7 @@ impl CavroMessage {
             }
         }
 
-        let device_type = if message_data[0] > 0x3F {CavroDeviceType::XYZ} else {CavroDeviceType::PUMP};
+        let device_type = if message_data[1] > 0x3F {CavroDeviceType::XYZ} else {CavroDeviceType::PUMP};
         let vrc = message_data[msg_len - 1];
         // check the vrc
         let (_end, data_no_vrc) = message_data.split_last().unwrap();
@@ -214,6 +225,23 @@ impl CavroMessage {
         }
     }
 
+    pub fn decode_to_command(message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>) -> Result<CavroCommand, ErrorCode> {
+        let cavro = Self::decode(message_data);
+        if cavro.error_code != ErrorCode::NoError {
+            return Err(cavro.error_code);
+        }
+
+        match cavro.device_type {
+            CavroDeviceType::XYZ => {
+                let xyz = XYZMessage::decode(cavro);
+                Ok(CavroCommand::XYZ(XYZCommand::decode(xyz)))
+            }
+            CavroDeviceType::PUMP => {
+                Ok(CavroCommand::Pump(PumpCommand::decode(cavro)))
+            }
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8, 255> {
         let mut encoded: Vec<u8, 255> = Vec::new();
         encoded.push(Self::STX).ok();
@@ -225,9 +253,9 @@ impl CavroMessage {
     }
 }
 
-trait Decodable<T> {
-    fn decode(cavro: CavroMessage) -> T;
-}
+// trait Decodable<T> {
+//     fn decode(cavro: CavroMessage) -> T;
+// }
 
 /// Represents a transaction in the XYZ protocol.
 ///
@@ -249,6 +277,8 @@ pub struct XYZTransaction {
     pub rsp_ack: XYZMessage,
 }
 
+#[cfg_attr(feature = "embedded", derive(Format))]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PumpCommand {
     pub error_code: ErrorCode,
     pub pump_address: u8,
@@ -284,10 +314,8 @@ impl PumpCommand {
             message_data: Vec::new(),
         }
     }
-}
-
-impl Decodable<PumpCommand> for CavroMessage {
-    fn decode(cavro: CavroMessage) -> PumpCommand {
+    
+    pub fn decode(cavro: CavroMessage) -> PumpCommand {
         let (header, data) = cavro.message_data.split_first_chunk::<2>().unwrap();
         let pump_address = header[0];
         let sequence_num = header[1];
@@ -612,93 +640,48 @@ mod xyz_message_tests {
     // }
 
     #[test]
+    fn test_decode_to_command() {
+        // Test XYZ Command
+        let xyz_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x41, 0x41, 0x41, 0x4d, 0x31, 0x30, 0x03, 0x00]).unwrap();
+        // Adjust VRC
+        let mut xyz_data = xyz_data;
+        let vrc = calculate_vrc(&xyz_data[0..xyz_data.len()-1]);
+        let last = xyz_data.len() - 1;
+        xyz_data[last] = vrc;
+
+        let cmd = CavroMessage::decode_to_command(xyz_data).unwrap();
+        match cmd {
+            CavroCommand::XYZ(xyz) => {
+                assert_eq!(xyz.cmd, "M10");
+                assert_eq!(xyz.sequence_number, 1);
+            }
+            _ => panic!("Expected XYZ command"),
+        }
+
+        // Test Pump Command
+        let pump_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x02, 0x31, 0x01, 0x41, 0x03, 0x00]).unwrap();
+        // Adjust VRC
+        let mut pump_data = pump_data;
+        let vrc = calculate_vrc(&pump_data[0..pump_data.len()-1]);
+        let last = pump_data.len() - 1;
+        pump_data[last] = vrc;
+
+        let cmd = CavroMessage::decode_to_command(pump_data).unwrap();
+        match cmd {
+            CavroCommand::Pump(pump) => {
+                assert_eq!(pump.pump_address, 0x31);
+                assert_eq!(pump.sequence_num, 0x01);
+                assert_eq!(pump.message_data.as_slice(), &[0x41]);
+            }
+            _ => panic!("Expected Pump command"),
+        }
+    }
+
+    #[test]
     fn test_decode_xyz_to_pump_command() {
         let message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[
             0x02, 0x44, 0x31, 0x31, 0x4c, 0x31, 0x30, 0x76, 0x35, 0x30, 0x56, 0x31, 0x32, 0x30,
             0x63, 0x35, 0x30, 0x4b, 0x33, 0x41, 0x31, 0x32, 0x52, 0x03, 0x10]).unwrap();
-        let cavro = CavroMessage::decode(message_data);
-        let xyz = XYZMessage::decode(cavro);
-        // assert_eq!(cavro.device_type, CavroDeviceType::PUMP);
-        // let msg: PumpCommand = PumpCommand::decode(cavro);
-        // assert_eq!(msg, CavroDeviceType::PUMP);
-
-        // let command = PumpCommand::decode(xyz);
-        // assert_eq!(xyz.repeat, true);
-        // assert_eq!(xyz.sequence_number, 2);
-        // assert_eq!(command.error_code, ErrorCode::NoError);
+        let _cavro = CavroMessage::decode(message_data);
     }
-
-    //
-    //     let pump = PumpCommand::new_from_xyz(xyz);
-    //     assert_eq!(pump.pump_adr(), 0x31);
-    //     assert_eq!(pump.sequence_num(), 0x04);
-    //     assert_eq!(pump.error_code(), ErrorCode::NoError);
-    //     // data should be "L10v50V120c50K3A12R"
-    //     assert_eq!(pump.message_data().as_slice(), &data[4..23]);
-    // }
-    //
-    // #[test]
-    // fn test_pump_command_decode() {
-    //     let pump_adr = 'P' as u8;
-    //     let sequence_num = 0x05;
-    //     let ack = PumpCommand::new_ack(pump_adr, sequence_num);
-    //
-    //     assert_eq!(ack.pump_adr(), pump_adr);
-    //     assert_eq!(ack.sequence_num(), sequence_num);
-    //     assert_eq!(ack.message_data().len(), 0);
-    //     assert_eq!(ack.error_code(), ErrorCode::NoError);
-    //
-    //     let encoded = ack.encode();
-    //     // STX, pump_adr, sequence, ETX, VRC -> 5 bytes
-    //     assert_eq!(encoded.len(), 5);
-    //     assert_eq!(encoded[0], 0x02); // STX
-    //     assert_eq!(encoded[1], pump_adr);
-    //     assert_eq!(encoded[2], sequence_num);
-    //     assert_eq!(encoded[3], 0x03); // ETX
-    //     let expected_vrc = 0x02 ^ pump_adr ^ sequence_num ^ 0x03;
-    //     assert_eq!(encoded[4], expected_vrc);
-    // }
-    //
-    // #[test]
-    // fn test_pump_response_encode() {
-    //     let message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x30, 0x31]).unwrap();
-    //     let msg = PumpResponse::new(
-    //         ErrorCode::NoError,
-    //         'M' as u8,
-    //         0x02,
-    //         message_data,
-    //         0,
-    //     );
-    //     let encoded = msg.encode();
-    //     // STX, master_adr, status, '0', '1', ETX, VRC -> 7 bytes
-    //     assert_eq!(encoded.len(), 7);
-    //     assert_eq!(encoded[0], 0x02); // STX
-    //     assert_eq!(encoded[1], 'M' as u8); // Master address
-    //     assert_eq!(encoded[2], 0x02); // Status
-    //     assert_eq!(encoded[3], 0x30); // '0'
-    //     assert_eq!(encoded[4], 0x31); // '1'
-    //     assert_eq!(encoded[5], 0x03); // ETX
-    //     let expected_vrc = 0x02 ^ ('M' as u8) ^ 0x02 ^ 0x30 ^ 0x31 ^ 0x03;
-    //     assert_eq!(encoded[6], expected_vrc);
-    // }
-    //
-    // #[test]
-    // fn test_pump_response_new_from_xyz() {
-    //     let message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }> = Vec::from_slice(&[0x55, 0xAA]).unwrap();
-    //     let xyz = XYZMessage::new(
-    //         ErrorCode::NoError,
-    //         0x42,
-    //         'A' as u8,
-    //         'M' as u8,
-    //         message_data,
-    //         0,
-    //     );
-    //     let resp = PumpResponse::new_from_xyz(xyz);
-    //     assert_eq!(resp.master_adr(), 'M' as u8);
-    //     assert_eq!(resp.status(), 0x02);
-    //     assert_eq!(resp.message_data().len(), 2);
-    //     assert_eq!(resp.message_data()[0], 0x55);
-    //     assert_eq!(resp.message_data()[1], 0xAA);
-    //     assert_eq!(resp.error_code(), ErrorCode::NoError);
-    // }
 }
