@@ -1,0 +1,56 @@
+# commands to send in Tecan packets
+
+# put LLS chip into bootloader mode
+#BL
+
+# pump version
+#&
+
+# get voltage
+#RV
+
+# Home all motors
+#PI
+#XI 600
+#ZI 200
+
+#XR 50
+#YR 50
+#ZR -50
+
+# move away to test all axis homing
+#XR 800
+#YR 800
+#ZR -200
+
+# move out,
+#YR 200
+#YI 800
+
+# Move absolute to X=0, Y=0, Z=0
+#PA 800 800 400
+#PA 3200 3200 0
+#PA 200 400 0
+#PA 400 800 0
+#PA 300 200 0
+
+# move X right 200 steps
+#XR 200
+
+# move X left 200 steps
+#XR -200
+
+# move Y back 100 steps
+#YR -100
+
+# move Z down 20 steps
+#ZR -200
+
+# move Y forward 200 steps
+#YR 200
+
+# move X right 200 steps
+#XR 200
+
+# move Z up 20 steps
+#ZR 200

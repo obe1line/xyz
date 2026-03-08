@@ -1,0 +1,107 @@
+{
+	"configurations": [
+		{
+			"type": "cortex-debug",
+			"request": "launch",
+            "servertype": "openocd",
+            "gdbTarget": ":3333",
+            "runToEntryPoint": "main",
+			"name": "launch x-firmware openocd",
+			"cwd": "${workspaceFolder}",
+			"executable": "./target/thumbv7em-none-eabihf/debug/x_firmware",
+			"gdbPath": "arm-none-eabi-gdb",
+			"configFiles": [
+				"interface/stlink.cfg",
+				"target/stm32f4x.cfg"
+			],
+			// "openOCDLaunchCommands": [
+			// 	"adapter driver stlink",
+			// 	"adapter_khz 4000"
+			// ],
+			// "openOCDPreConfigLaunchCommands": [
+			// 	"init",
+			// 	"reset init"
+			// ],
+			"showDevDebugOutput": "raw",
+
+			// "connectUnderReset": true,
+			// "runtimeExecutable": "probe-rs",
+			// "runtimeArgs": ["dap-server"],
+			// "chip": "STM32F405RG",
+			// "flashingConfig": {
+			// 	"flashingEnabled": true,
+			// 	"haltAfterReset": true,
+			// 	"formatOptions": {
+          	// 		"binaryFormat": "elf"
+    		//     }
+			// },
+			// "coreConfigs": [
+			// 	{
+			// 		"coreIndex": 0,
+			// 		"programBinary": "./target/thumbv7em-none-eabihf/debug/x_firmware",
+			// 		"svdFile": "STM32F405.svd",
+			// 		"rttEnabled": true,
+			// 		"rttChannelFormats": [
+			// 			{
+			// 				"channelNumber": 0,
+			// 				// Format RTT data as String data
+			// 				"dataFormat": "String",
+			// 				// Include host-side timestamps for every line of data transferred from the target RTT output
+			// 				"showTimestamps": true
+			// 			}
+			// 		]
+			// 	}
+			// ],
+			// "env": {
+			// 	"RUST_LOG": "info",
+			// },
+			// "consoleLogLevel": "Console"
+		},
+		{
+			"type": "cortex-debug",
+			"request": "attach",
+            "servertype": "openocd",
+            "gdbTarget": ":3333",
+            "runToEntryPoint": "main",
+			"name": "attach x-firmware openocd",
+			"cwd": "${workspaceFolder}",
+			"executable": "./target/thumbv7em-none-eabihf/debug/x_firmware",
+			// "gdbPath": "arm-none-eabi-gdb",
+			"configFiles": [
+				"interface/stlink.cfg",
+				"target/stm32f4x.cfg"
+			],
+			// "openOCDPreConfigLaunchCommands": [
+			// 	"adapter transports dapdirect_swd",
+			// 	"adapter driver st-link",
+			// 	"adapter speed 4000",
+			// 	"init",
+			// 	"reset init"
+			// ],
+			"showDevDebugOutput": "raw",
+			// "connectUnderReset": true,
+			// "chip": "STM32F405RG",
+			// "coreConfigs": [
+			// 	{
+			// 		"coreIndex": 0,
+			// 		"programBinary": "./target/thumbv7em-none-eabihf/debug/x_firmware",
+			// 		"svdFile": "STM32F405.svd",
+			// 		"rttEnabled": true,
+			// 		"rttChannelFormats": [
+			// 			{
+			// 				"channelNumber": 0,
+			// 				// Format RTT data as String data
+			// 				"dataFormat": "String",
+			// 				// Include host-side timestamps for every line of data transferred from the target RTT output
+			// 				"showTimestamps": true
+			// 			}
+			// 		]
+			// 	}
+			// ],
+			// "env": {
+			// 	"RUST_LOG": "info",
+			// },
+			// "consoleLogLevel": "Console"
+		}
+	]
+}

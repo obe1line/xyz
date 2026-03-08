@@ -1,0 +1,25 @@
+[default.general]
+chip = "STM32F405RG"
+log_level = "WARN"
+connect_under_reset = true
+
+[default.rtt]
+enabled = true
+timeout = 5000
+log_enabled = true
+log_path = "./logs"
+
+#up_channels = [
+#        { channel = 0, mode = "BlockIfFull", format = "Defmt" },
+#    #    { channel = 1, mode = "BlockIfFull", format = "String", socket = "127.0.0.1:12345" },
+#    #    { channel = 2, mode = "BlockIfFull", format = "String", socket = "127.0.0.1:12346" },
+#]
+### The UI configuration:
+#tabs = [
+#    { up_channel = 0, name = "Log" },
+#    #    { up_channel = 1, name = "sensor-data", hide = true },
+#    #    { up_channel = 2, name = "battery-level", hide = true },
+#]
+
+[default.gdb]
+enabled = true

@@ -1,0 +1,59 @@
+#[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+#runner = "probe-rs run --chip STM32F405RG --connect-under-reset --verify --speed 4000"
+# next line works for running
+#runner = "probe-rs attach --chip STM32F405RG --connect-under-reset --verify --speed 4000"
+# for debugging with gdb and openocd
+#runner = "arm-none-eabi-gdb -q -x firmware-disco/openocd.gdb"
+
+#[build]
+###target = "x86_64-unknown-linux-gnu"
+#target = "thumbv7em-none-eabihf"
+#rustflags = [
+#    "-C", "link-args=-Map=target/thumbv7em-none-eabihf/x-firmware.map",
+#    "-C", "link-arg=-Tlink.x",
+#    "-C", "link-arg=--nmagic",
+#    "-C", "link-arg=-Tdefmt.x",
+#]
+
+[env]
+DEFMT_LOG = "trace"
+
+[alias]
+#xflash = "flash --chip STM32F405RG --connect-under-reset --verify --speed 4000 -p x_firmware"
+xattach = "attach --chip STM32F405RG --connect-under-reset --verify --speed 4000 -p x_firmware"
+#xattach = "embed --chip STM32F405RG"
+yflash = "flash --chip STM32F405RG --connect-under-reset --verify --speed 4000 -p y_firmware"
+yattach = "attach --chip STM32F405RG --connect-under-reset --verify --speed 4000 -p y_firmware"
+#yattach = "embed --chip STM32F405RG"
+zflash = "flash --chip STM32C071KT6 --connect-under-reset --verify --speed 4000 -p z_firmware"
+zattach = "attach --chip STM32C071KT6 --connect-under-reset --verify --speed 4000 -p z_firmware"
+#zattach = "embed --chip STM32C071KT6"
+buildemb = "build -p x_firmware --color=always --no-default-features --features=embedded --target=thumbv7em-none-eabihf"
+runemb = "run -p x_firmware --color=always --no-default-features --features=embedded --target=thumbv7em-none-eabihf"
+buildparser = "build -p xyz_parser --color=always --profile test --features=std"
+testparser = "test -p xyz_parser --color=always --profile test --features=std -- --show-output"
+
+[profile.test]
+opt-level = 0
+lto = true
+codegen-units = 1
+debug = true
+overflow-checks = true
+
+[profile.dev]
+opt-level = 0
+lto = true
+codegen-units = 1
+debug = true
+overflow-checks = true
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug = false
+overflow-checks = true
+strip = "symbols"
+panic = "abort"
+incremental = false
+debug-assertions = false

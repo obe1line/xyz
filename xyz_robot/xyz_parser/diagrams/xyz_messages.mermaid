@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant PM as Processing Module
+
+    # Bad Message to X
+    PM->>X: Cmd = Bad_X_Message
+    X->>PM: NAck (Cmd)
+
+    # Bad Message to Y
+    PM->>X: Cmd = Bad_Y_Message
+    X->>Y: Cmd = Bad_Y_Message
+    Y->>X: NAck (Cmd)
+    X->>PM: NAck (Cmd)
+
+    # LLS Sample Request (to Y)
+    PM->>X: Cmd = LLS_Sample
+    X->>PM: Ack (Cmd)
+    X->>Y: Cmd = LLS_Sample
+    Y->>X: Ack (Cmd)
+    Y->>Z: Cmd = LLS_Sample
+    Z->>Y: Ack (Cmd)
+    Z->>Y: Response (LLS Data)
+    Y->>Z: Ack (Rsp)

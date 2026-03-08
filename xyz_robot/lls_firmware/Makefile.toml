@@ -1,0 +1,40 @@
+#[tasks.format]
+#install_crate = "rustfmt"
+#command = "cargo"
+#args = ["fmt", "--", "--emit=files"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+# Note that this build uses a different target to the other firmware builds
+[tasks.build_fw]
+command = "cargo"
+args = ["build", "--color=always", "--features=embedded", "--target=thumbv6m-none-eabi"]
+
+[tasks.build_fw_rel]
+command = "cargo"
+args = ["build", "--color=always", "--features=embedded", "--target=thumbv6m-none-eabi", "--profile=release"]
+
+[tasks.flash_lls]
+command = "probe-rs"
+args = ["download", "--chip=STM32C071K8Tx", "--connect-under-reset", "target/thumbv6m-none-eabihf/debug/lls_firmware"]
+
+[tasks.attach_lls]
+command = "probe-rs"
+args = ["attach", "--chip=STM32C071K8Tx", "--connect-under-reset", "--verify", "--speed=3300", "target/thumbv6m-none-eabihf/debug/lls_firmware"]
+
+# unit tests for different OS targets
+[tasks.unit_test]
+linux_alias = "unit_test_linux"
+windows_alias = "unit_test_windows"
+
+[tasks.unit_test_windows]
+command = "cargo"
+args = ["test", "--color=always", "--features=std", "--target=x86_64-pc-windows-msvc"]
+dependencies = ["clean"]
+
+[tasks.unit_test_linux]
+command = "cargo"
+args = ["test", "--color=always", "--features=std", "--target=x86_64-unknown-linux-gnu"]
+dependencies = ["clean"]

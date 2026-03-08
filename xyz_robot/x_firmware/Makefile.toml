@@ -1,0 +1,40 @@
+#[tasks.format]
+#install_crate = "rustfmt"
+#command = "cargo"
+#args = ["fmt", "--", "--emit=files"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.build_fw]
+command = "cargo"
+args = ["build", "--color=always", "--features=embedded-rtt", "--target=thumbv7em-none-eabihf"]
+
+# unit tests for different OS targets
+[tasks.unit_test]
+linux_alias = "unit_test_linux"
+windows_alias = "unit_test_windows"
+
+[tasks.unit_test_windows]
+command = "cargo"
+args = ["test", "--color=always", "--features=std", "--target=x86_64-pc-windows-msvc"]
+dependencies = ["clean"]
+
+[tasks.unit_test_linux]
+command = "cargo"
+args = ["test", "--color=always", "--features=std", "--target=x86_64-unknown-linux-gnu"]
+dependencies = ["clean"]
+
+[tasks.flash_x]
+command = "probe-rs"
+args = ["download", "--chip=STM32F405RG", "--connect-under-reset", "target/thumbv7em-none-eabihf/debug/x_firmware"]
+
+[tasks.attach_x]
+command = "probe-rs"
+args = ["attach", "--chip=STM32F405RG", "--connect-under-reset", "--verify", "--speed=3300", "target/thumbv7em-none-eabihf/debug/x_firmware"]
+
+[tasks.full]
+dependencies = [
+    "build_clean_fw",
+]

@@ -1,0 +1,21 @@
+[package]
+name = "xyz_parser"
+version = "0.1.0"
+edition = "2024"
+documentation = "xyz_parser"
+autotests = true
+
+[dependencies]
+heapless = { version = "0.9.1" }
+log = { version = "0.4.28", optional = true }
+defmt = { version = "1.0.1", optional = true }
+simple-mermaid = "0.2.0"
+itoa = { version = "1.0.15" }
+
+[features]
+default = []
+embedded = ["defmt"]
+std = ["log"]
+test = ["std"]
+
+

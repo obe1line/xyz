@@ -1,0 +1,37 @@
+[package]
+name = "yz_firmware"
+version = "0.1.0"
+edition = "2024"
+autotests = true
+autoexamples = true
+documentation = "yz_firmware"
+
+[dependencies]
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"], optional = true }
+cortex-m-rt = { version = "0.7.5", optional = true }
+defmt = { version = "1.0.0", optional = true }
+defmt-rtt = { version = "1.0.0", features = ["disable-blocking-mode"], optional = true }
+embassy-executor = { version = "0.9.1", features = [ "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"], optional = true }
+embassy-stm32 = { version = "0.4.0", features = ["time-driver-any", "stm32f405rg", "memory-x", "unstable-pac", "exti", "chrono", "default"], optional = true }
+embassy-sync = { version = "0.7.2" , features = ["defmt"], optional = true}
+embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"], optional = true }
+panic-probe = { version = "1.0.0", features = ["print-defmt"], optional = true }    # panic message will be printed via defmt
+heapless = { version = "0.9.1", features = ["defmt"], optional = true }
+log = { version = "0.4.28", optional = true }
+#simple-mermaid = "0.2.0"
+xyz_parser = { path = "../xyz_parser", optional = true }
+xyz_motor = { path = "../xyz_motor", optional = true }
+fixed = { version="1.29.0" }
+
+[features]
+default = ["embedded"]
+embedded = ["cortex-m", "cortex-m-rt", "embassy-executor", "embassy-stm32", "embassy-sync",
+    "embassy-time", "heapless", "panic-probe", "xyz_parser/embedded", "xyz_motor/embedded", "defmt", "defmt-rtt"]
+xyz_std = ["xyz_parser/std", "xyz_motor/std", "log"]
+test = ["xyz_std"]
+
+[[bin]]
+name = "yz_firmware"
+test = false
+bench = false
+harness = false

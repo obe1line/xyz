@@ -1,0 +1,85 @@
+[tasks.x_fw_no_clean]
+dependencies = [
+    { name = "build_fw_f405", path="xyz_parser" },
+    { name = "build_fw", path="xyz_motor" },
+    { name = "build_fw", path="x_firmware" },
+]
+
+[tasks.yz_fw_no_clean]
+dependencies = [
+    { name = "build_fw_f405", path="xyz_parser" },
+    { name = "build_fw", path="xyz_motor" },
+    { name = "build_fw", path="yz_firmware" },
+]
+
+[tasks.lls_fw_no_clean]
+dependencies = [
+    { name = "build_fw_c071", path="xyz_parser" },
+    { name = "build_fw", path="lls_firmware" },
+]
+
+[tasks.x_fw]
+dependencies = [
+    { name = "clean", path="xyz_parser" },
+    { name = "clean", path="xyz_motor" },
+    { name = "clean", path="x_firmware" },
+    "x_fw_no_clean",
+]
+
+[tasks.yz_fw]
+dependencies = [
+    { name = "clean", path="xyz_parser" },
+    { name = "clean", path="xyz_motor" },
+    { name = "clean", path="yz_firmware" },
+    "yz_fw_no_clean",
+]
+
+[tasks.lls_fw]
+dependencies = [
+    { name = "clean", path="xyz_parser" },
+    { name = "clean", path="lls_firmware" },
+    "lls_fw_no_clean",
+]
+
+[tasks.flash_x]
+dependencies = [
+    { name = "flash_x", path="x_firmware" }
+]
+
+[tasks.flash_yz]
+dependencies = [
+    { name = "flash_yz", path="yz_firmware" }
+]
+
+[tasks.flash_lls]
+dependencies = [
+    { name = "flash_lls", path="lls_firmware" }
+]
+
+[tasks.attach_x]
+dependencies = [
+    { name = "attach_x", path="x_firmware" }
+]
+
+[tasks.attach_yz]
+dependencies = [
+    { name = "attach_yz", path="yz_firmware" }
+]
+
+[tasks.attach_lls]
+dependencies = [
+    { name = "attach_lls", path="lls_firmware" }
+]
+
+[tasks.fw]
+dependencies = [
+    "x_fw",
+    "yz_fw",
+    "lls_fw"
+]
+
+[tasks.full]
+dependencies = [
+    { name = "unit_test", path="xyz_parser" },
+    "fw"
+]
