@@ -1,0 +1,14 @@
+[tasks.tools]
+dependencies = [
+    { name = "full", path="tools/uart_cli" }
+]
+
+[tasks.xyz_robot_full]
+dependencies = [
+    { name = "full", path="xyz_robot" }
+]
+
+[tasks.full]
+dependencies = ["tools",
+    "xyz_robot_full",
+]

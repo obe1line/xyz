@@ -1,0 +1,3 @@
+[tasks.full]
+command = "cargo"
+args = ["build", "--color=always"]
