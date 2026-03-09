@@ -1,8 +1,9 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{XYZCommand, XYZMessage, XYZMessageParser};
+use xyz_parser::{XYZCommand, XYZMessage, CavroMessage, CavroMessageParser};
 use fixed::types::extra::U3;
+use embassy_stm32::spi::mode::Master;
 
 
 #[cfg(feature = "embedded")]
@@ -54,10 +55,10 @@ fn uart_config() -> usart::Config {
 const IN_CHANNEL_MSG_SIZE: usize = 8;
 const OUT_CHANNEL_MSG_SIZE: usize = 8;
 
-static IN_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
-static OUT_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, XYZMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
-//static IN_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
-static OUT_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, XYZMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
+static IN_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
+static OUT_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
+static IN_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
+static OUT_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
 
 macro_rules! validate_params{
     ($params_len:expr, $expected_len:expr) => {
@@ -85,8 +86,8 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
                               power_step_controller_z: &'static mut PowerStepControl<'static, XYZStepperController>,
                               motor_home: Input<'static>,
                               motor_status_24v: Input<'static>,
-                              _outgoing_to_lls: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, XYZMessage, OUT_CHANNEL_MSG_SIZE>,
-                              upstream_outgoing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE>
+                              _outgoing_to_lls: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
+                              upstream_outgoing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>
 ) -> ! {
     let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
 
@@ -114,22 +115,25 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
     let current_position = Position::new(0, 0, 0);
 
     fn send_response_upstream(in_msg: &XYZMessage, data: Vec<u8, 255>, error_code: u8) {
-        let response_message = XYZMessage::create_answer(in_msg, data, error_code);
+        let xyz = XYZMessage::create_answer(in_msg, data, error_code);
+        let response_message = CavroMessage::new(xyz.encode());
         OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
     }
 
     let mut motor_needs_reset = false;
     loop {
-        let message = receiver.receive().await;
-        let decode_result = XYZCommand::decode(message.message_data.as_slice());
-        if decode_result.is_err() {
-            error!("Failed to decode command: {:?}", decode_result.err());
-            // TODO: send error response
-            continue;
-        }
+        let cavro = receiver.receive().await;
+        let xyz = XYZMessage::decode(cavro.message_data.clone());
 
-        let opt_command = decode_result.ok();
-        if opt_command.is_none() {
+        // send ack upstream as we have 24V power and are now processing the message content
+        let xyz_ack = XYZMessage::new_ack(xyz.arm_address, xyz.device_address);
+        let ack = CavroMessage::new(xyz_ack.encode());
+        upstream_outgoing.try_send(ack).unwrap();
+
+        let command = XYZCommand::decode(xyz);
+        // TODO: check for errors
+
+        if command.cmd.len() == 0 {
             error!("No command to run - ignoring");
             continue;
         }
@@ -140,10 +144,6 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
             motor_needs_reset = true;
             continue;
         }
-
-        // send ack upstream as we have 24V power and are now processing the message content
-        let ack = XYZMessage::new_ack(message.arm_adr, message.device_adr);
-        upstream_outgoing.try_send(ack).unwrap();
 
         // has the motor power just come back on?
         if motor_needs_reset {
@@ -170,7 +170,6 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
             info!("Motor is ready");
         }
 
-        let command = opt_command.unwrap();
         info!("Processing command: {}, params: {:?}", command.cmd.as_str(), command.params);
         match command.cmd.as_str() {
             // "BL" => {
@@ -209,7 +208,8 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
                 }
 
                 // TODO: blank response for now
-                send_response_upstream(&message, Vec::new(), 0);
+                let xyz = XYZMessage::decode(cavro.message_data.clone());
+                send_response_upstream(&xyz, Vec::new(), 0);
             }
             "PI" | "YI" | "ZI" => {
                 wait_for_motor(Y_MOTOR_DEVICE_ID, power_step_controller_y);
@@ -295,7 +295,8 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
                     }
                 }
                 // TODO: blank response for now
-                send_response_upstream(&message, Vec::new(), 0);
+                let xyz = XYZMessage::decode(cavro.message_data.clone());
+                send_response_upstream(&xyz, Vec::new(), 0);
             }
             "YR" | "ZR" => {
                 validate_params!(command.num_params, 1);
@@ -321,7 +322,8 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
                 }
 
                 // TODO: blank response for now
-                send_response_upstream(&message, Vec::new(), 0);
+                let xyz = XYZMessage::decode(cavro.message_data.clone());
+                send_response_upstream(&xyz, Vec::new(), 0);
             },
             _ => info!("Unknown command: {}", command.cmd.as_str()),
         }
@@ -332,12 +334,12 @@ async fn message_handler_task(power_step_controller_y: &'static mut PowerStepCon
 #[embassy_executor::task(pool_size = 1)]
 async fn downstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
-    processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE>,
+    processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
     let mut rx_dma_buf = [0u8; 256];
     let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
     let mut buffer = [0u8; 64];
-    let mut parser = XYZMessageParser::new();
+    let mut parser = CavroMessageParser::new();
 
     loop {
         info!("Reading from UART");
@@ -351,17 +353,19 @@ async fn downstream_message_receiver(
         if n > 0 {
             info!("Read {} bytes from UART", n);
             parser.add_data(&buffer, n);
-            let message = parser.parse();
-            info!("Message parser error code: {:?}", message.error_code);
-            if message.error_code == xyz_parser::ErrorCode::NoError {
-                if message.control == XYZMessage::ACK {
+            let cavro = parser.parse();
+            info!("Message parser error code: {:?}", cavro.error_code);
+            if cavro.error_code == xyz_parser::ErrorCode::NoError {
+                let xyz = XYZMessage::decode(cavro.message_data.clone());
+                if xyz.control == XYZMessage::ACK {
                     info!("Received ACK message - ignoring for now");
                     continue;
                 }
 
                 // process the message in another task, which sends an ack and response when done
                 info!("Queuing upstream message for processing");
-                if let Err(e) = processing.try_send(message) {
+                let cavro_msg = CavroMessage::new(xyz.encode());
+                if let Err(e) = processing.try_send(cavro_msg) {
                     info!("Failed to send message to channel: {:?}", e);
                 }
             }
@@ -373,12 +377,12 @@ async fn downstream_message_receiver(
 #[embassy_executor::task(pool_size = 1)]
 async fn upstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
-    processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE>,
+    processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
     let mut rx_dma_buf = [0u8; 256];
     let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
     let mut buffer = [0u8; 64];
-    let mut parser = XYZMessageParser::new();
+    let mut parser = CavroMessageParser::new();
 
     loop {
         info!("Reading from UART");
@@ -392,17 +396,19 @@ async fn upstream_message_receiver(
         if n > 0 {
             info!("Read {} bytes from UART", n);
             parser.add_data(&buffer, n);
-            let message = parser.parse();
-            info!("Message parser error code: {:?}", message.error_code);
-            if message.error_code == xyz_parser::ErrorCode::NoError {
-                if message.control == XYZMessage::ACK {
+            let cavro = parser.parse();
+            info!("Message parser error code: {:?}", cavro.error_code);
+            if cavro.error_code == xyz_parser::ErrorCode::NoError {
+                let xyz = XYZMessage::decode(cavro.message_data);
+                if xyz.control == XYZMessage::ACK {
                     info!("Received ACK message - ignoring for now");
                     continue;
                 }
 
                 // process the message in another task, which sends an ack and response when done
                 info!("Queuing upstream message for processing");
-                if let Err(e) = processing.try_send(message) {
+                let cavro_msg = CavroMessage::new(xyz.encode());
+                if let Err(e) = processing.try_send(cavro_msg) {
                     info!("Failed to send message to channel: {:?}", e);
                 }
             }
@@ -415,11 +421,11 @@ async fn upstream_message_receiver(
 async fn message_sender_task(
     task_id: u8,
     mut usart_tx: UartTx<'static, Async>,
-    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, XYZMessage, OUT_CHANNEL_MSG_SIZE>,
+    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
 ) -> ! {
     loop {
-        let message = receiver.receive().await;
-        let command = XYZCommand::decode(message.message_data.as_slice()).unwrap();
+        let xyz = receiver.receive().await;
+        //let command = XYZCommand::decode(xyz);
 
         // // check for an LLS boot request
         // if command.cmd == "BL" {
@@ -431,9 +437,9 @@ async fn message_sender_task(
         //     continue;
         // }
 
-        let message_bytes = message.encode();
+        let message_bytes = xyz.encode();
         usart_tx.write(&message_bytes.as_slice()).await.expect("Failed to write message to UART");
-        info!("Sent message from sender task {}: {:?}", task_id, message);
+        info!("Sent message from sender task {}: {:?}", task_id, xyz);
     }
 }
 
@@ -489,10 +495,10 @@ impl MotorController for YZMotorController {
 // TODO: This can be moved into a common embedded module
 //////////////////////////////////////////////////////////////////////////////////////////////
 struct XYZStepperController {
-    spi: Spi<'static, Blocking>,
+    spi: Spi<'static, Blocking, Master>,
 }
 impl<'a> XYZStepperController {
-    fn new(spi: Spi<'static, Blocking>) -> Self {
+    fn new(spi: Spi<'static, Blocking, Master>) -> Self {
         Self {
             spi,
         }
@@ -625,7 +631,7 @@ async fn main(spawner: Spawner) {
         p.DMA1_CH6, // TX DMA
         p.DMA1_CH5, // RX DMA
         uart_config()).expect("Failed to configure uart");
-    let (downstream_tx, _downstream_rx) = usart2.split();
+    let (downstream_tx, downstream_rx) = usart2.split();
 
     //=========================================
     // Configure USART6 for RS485 communication
@@ -787,7 +793,6 @@ async fn main(spawner: Spawner) {
     info!("Starting message receiver task...downstream");
     spawner.spawn(downstream_message_receiver(downstream_rx,
                                         IN_DOWNSTREAM_MSG_CHANNEL.sender(),   // data to process
-                                        OUT_DOWNSTREAM_MSG_CHANNEL.sender(),  // response and ack
     )).unwrap();
 
     // spawn a task to send message responses upstream

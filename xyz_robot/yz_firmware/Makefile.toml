@@ -11,8 +11,8 @@ args = ["clean"]
 command = "cargo"
 args = ["build", "--color=always", "--features=embedded", "--target=thumbv7em-none-eabihf"]
 
-[tasks.build_fw_no_clean]
-dependencies = ["clean", "build"]
+[tasks.build_clean_fw]
+dependencies = ["clean", "build_fw"]
 
 # unit tests for different OS targets
 [tasks.unit_test]
