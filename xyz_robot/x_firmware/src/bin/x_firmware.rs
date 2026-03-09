@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{CavroMessage, CavroMessageParser, XYZMessage, XYZCommand};
+use xyz_parser::{CavroMessage, CavroMessageParser, XYZMessage, XYZCommand, PumpCommand};
 use fixed::types::extra::U3;
 
 #[cfg(feature = "embedded")]
@@ -61,6 +61,10 @@ const OUT_CHANNEL_MSG_SIZE: usize = 8;
 
 static IN_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
 static OUT_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
+
+// static IN_PUMP_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
+static OUT_PUMP_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
+
 static IN_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
 static OUT_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
 
@@ -113,6 +117,7 @@ macro_rules! validate_position{
 async fn upstream_message_handler_task(power_step_controller: &'static mut PowerStepControl<'static, XYZStepperController>,
                                        motor_home: Input<'static>,
                                        motor_status_24v: Input<'static>,
+                                       pump_outgoing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
                                        upstream_outgoing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>) -> ! {
     let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
 
@@ -143,7 +148,7 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
     async fn wait_for_ack_and_answer(receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
                                      delay_ms: u64,
                                      timeout: u16) -> bool {
-        info!("Waiting for YZ board to respond to PA command...");
+        info!("Waiting for YZ board to respond to command...");
         // wait for a message from YZ board
         let mut retry_count = timeout;
         while receiver.is_empty() && retry_count > 0 {
@@ -152,17 +157,17 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
         }
         // timeout?
         if retry_count == 0 {
-            error!("Timeout waiting for YZ ack for PA command");
+            error!("Timeout waiting for YZ ack for command");
             return false;
         }
         else {
             let cavro = receiver.receive().await;
             let ack = XYZMessage::decode(cavro.message_data.clone());
             if ack.control == XYZMessage::ACK {
-                info!("Received ack from YZ for PA command: {:?}", ack);
+                info!("Received ack from YZ for command: {:?}", ack);
             }
             else {
-                warn!("Received a msg when expecting ack from YZ for PA command: {:?}", ack);
+                warn!("Received a msg when expecting ack from YZ for command: {:?}", ack);
             }
         }
 
@@ -204,8 +209,13 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
         let ack_message = CavroMessage::new(ack_xyz.encode());
         upstream_outgoing.try_send(ack_message).unwrap();
 
-        if xyz.device_address != 0x38 {
-            // forward the pump command
+        // pump command?
+        if xyz.is_pump_device() {
+            let pump_command = PumpCommand::decode(xyz.message_data.clone());
+            // send to the pump channel
+            let pump_cavro_message = CavroMessage::new(pump_command.encode());
+            pump_outgoing.try_send(pump_cavro_message).unwrap();
+            continue;
         }
 
         // the upstream port is always xyz messages
@@ -553,6 +563,26 @@ async fn upstream_message_sender(
 
 #[cfg(feature = "embedded")]
 #[embassy_executor::task(pool_size = 1)]
+async fn pump_message_sender(
+    mut rs485_enable: Output<'static>,
+    mut pump_rs485_tx: UartTx<'static, Async>,
+    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
+) -> ! {
+    loop {
+        let message = receiver.receive().await;
+        let message_bytes = message.encode();
+        // set the RS485 enable pin high to transmit and then low to receive again.
+        rs485_enable.set_high();
+        pump_rs485_tx.blocking_write(&message_bytes).expect("TODO: panic message");
+        pump_rs485_tx.blocking_flush().expect("TODO: panic message");
+        rs485_enable.set_low();
+        pump_rs485_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to RS485");
+        info!("Sent message to pump RS485: {}", message);
+    }
+}
+
+#[cfg(feature = "embedded")]
+#[embassy_executor::task(pool_size = 1)]
 async fn downstream_message_sender(
     mut downstream_usart_tx: UartTx<'static, Async>,
     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
@@ -744,10 +774,10 @@ async fn main(spawner: Spawner) {
         p.DMA2_CH6, // TX DMA
         p.DMA2_CH1, // RX DMA
         uart_config()).expect("Failed to configure uart");
-    let (_usart6_tx, _usart6_rx) = usart6.split();
+    let (pump_tx, _pump_rx) = usart6.split();
 
     // RS485 enable pin is on PC14
-    let _rs485_enable = Output::new(p.PC14, Level::Low, Speed::Low);
+    let rs485_enable = Output::new(p.PC14, Level::Low, Speed::Low);
 
     //=========================================
     // Configure SPI1 for X-motor communication
@@ -805,9 +835,11 @@ async fn main(spawner: Spawner) {
 
     info!("Starting upstream message handler task...");
     spawner.spawn(upstream_message_handler_task(power_ctrl, motor1_home, motor_status_24v,
-                                                OUT_UPSTREAM_MSG_CHANNEL.sender(),  // ack
+                                                OUT_UPSTREAM_MSG_CHANNEL.sender(),
+                                                OUT_PUMP_MSG_CHANNEL.sender(),
                                                 )).unwrap();
 
+    // TODO: pump message handler
     // TODO: downstream handler not needed for now - using wait for ack function
     // info!("Starting downstream message handler task...");
     // spawner.spawn(downstream_message_handler_task()).unwrap();
@@ -827,6 +859,10 @@ async fn main(spawner: Spawner) {
     spawner.spawn(upstream_message_sender(upstream_tx,
                                           OUT_UPSTREAM_MSG_CHANNEL.receiver())).unwrap();
 
+    info!("Starting message sender task... pump");
+    spawner.spawn(pump_message_sender(rs485_enable, pump_tx,
+                                      OUT_PUMP_MSG_CHANNEL.receiver())).unwrap();
+
     info!("Starting message sender task...downstream");
     spawner.spawn(downstream_message_sender(downstream_tx,
                                             OUT_DOWNSTREAM_MSG_CHANNEL.receiver())).unwrap();
@@ -835,14 +871,6 @@ async fn main(spawner: Spawner) {
         // let data = "USART1.".as_bytes();
         // usart1.write(&data).await.expect("TODO: panic message");
 
-        // This uart is connected to RS485, so need to set the enable pin high to transmit
-        // and then low to receive again.
-        // let data = "USART6.".as_bytes();
-        // rs485_enable.set_high();
-        // usart6.blocking_write(&data).expect("TODO: panic message");
-        // usart6.blocking_flush().expect("TODO: panic message");
-        // rs485_enable.set_low();
-
         // info!("Waiting 2 sec");
         Timer::after_millis(2000).await;
     }
@@ -850,9 +878,9 @@ async fn main(spawner: Spawner) {
 
 #[cfg(not(feature = "embedded"))]
 fn main() {
-    // Initialize the XYZMessageParser
-    let parser = XYZMessageParser::new();
+    // Initialize the CavroMessageParser
+    let parser = CavroMessageParser::new();
 
     // Print the version of the parser
-    info!("XYZMessageParser version: {}", parser.version());
+    info!("CavroMessageParser version: {}", parser.version());
 }
