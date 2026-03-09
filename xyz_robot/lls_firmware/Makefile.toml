@@ -16,6 +16,9 @@ args = ["build", "--color=always", "--features=embedded", "--target=thumbv6m-non
 command = "cargo"
 args = ["build", "--color=always", "--features=embedded", "--target=thumbv6m-none-eabi", "--profile=release"]
 
+[tasks.build_clean_fw]
+dependencies = ["clean", "build_fw"]
+
 [tasks.flash_lls]
 command = "probe-rs"
 args = ["download", "--chip=STM32C071K8Tx", "--connect-under-reset", "target/thumbv6m-none-eabihf/debug/lls_firmware"]
@@ -38,3 +41,8 @@ dependencies = ["clean"]
 command = "cargo"
 args = ["test", "--color=always", "--features=std", "--target=x86_64-unknown-linux-gnu"]
 dependencies = ["clean"]
+
+[tasks.full]
+dependencies = [
+    "build_clean_fw",
+]

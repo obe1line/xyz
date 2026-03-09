@@ -2,16 +2,17 @@
 #![no_main]
 use core::fmt;
 use cortex_m::prelude::_embedded_hal_blocking_serial_Write;
-use defmt::{info};
+use defmt::{info, error};
 use embassy_executor::Spawner;
 use embassy_futures::select::select;
-use embassy_stm32::{bind_interrupts, i2c, peripherals, usart, Peri, Peripherals};
+use embassy_stm32::{bind_interrupts, exti, i2c, peripherals, usart, Peripherals};
 use embassy_stm32::exti::ExtiInput;
+use embassy_stm32::interrupt;
 use embassy_stm32::gpio::{Output, Level, Speed, Pull};
 use embassy_stm32::i2c::{I2c};
 use embassy_stm32::mode::{Async, Blocking};
 use embassy_stm32::usart::Uart;
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct IrqsI2C1 {
@@ -230,7 +231,10 @@ async fn main(spawner: Spawner) {
         Err(e) => uart_dbg(&mut uart2, format_args!("LLS device config failed: {}\r\n", e)).await
     };
 
-    let mut lls_data_ready = ExtiInput::new(p.PB5, p.EXTI5, Pull::Up);
+    bind_interrupts!(struct IrqsExti5 {
+        EXTI4_15 => exti::InterruptHandler<interrupt::typelevel::EXTI4_15>;
+    });
+    let mut lls_data_ready = ExtiInput::new(p.PB5, p.EXTI5, Pull::Up, IrqsExti5);
 
     let mut count: u32 = 0;
     loop {
