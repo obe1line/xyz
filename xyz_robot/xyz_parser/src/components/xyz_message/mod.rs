@@ -155,6 +155,7 @@ impl XYZCommand {
     pub const MAX_PARAMS: usize = 4; // Maximum number of parameters
 }
 
+#[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct CavroMessage {
     pub error_code: ErrorCode,
@@ -355,6 +356,7 @@ impl PumpResponse {
 /// - `cavro`: The underlying Cavro message.
 /// - `arm_adr`: The arm address byte.
 #[doc = mermaid!("../../../diagrams/xyz_binary_packet.mermaid")]
+#[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, Default)]
 pub struct XYZMessage {
     pub error_code: ErrorCode,
