@@ -102,7 +102,7 @@ impl XYZCommand {
         let data = xyz.message_data;
         // ensure data is valid ASCII
         if !data.is_ascii() {
-            info!("Not ASCII: {:?}", data);
+            info!("Not ASCII: {:?}", data.as_slice());
             command.error_code = ErrorCode::InvalidCommand;
             return command;
         }
@@ -120,7 +120,7 @@ impl XYZCommand {
                 return command;
             }
         } else {
-            info!("No command found in data: {:?}", data);
+            info!("No command found in data: {:?}", data.as_slice());
             command.error_code = ErrorCode::InvalidCommand;
             return command;
         }
@@ -155,17 +155,14 @@ impl XYZCommand {
     pub const MAX_PARAMS: usize = 4; // Maximum number of parameters
 }
 
-#[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct CavroMessage {
     pub error_code: ErrorCode,
     pub message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>,
     pub vrc: u8,
     pub vrc_calculated: u8,
-    pub device_type: CavroDeviceType,
 }
 
-#[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, PartialEq, Clone)]
 pub enum CavroCommand {
     XYZ(XYZCommand),
@@ -187,7 +184,15 @@ impl CavroMessage {
             message_data: Vec::new(),
             vrc: 0,
             vrc_calculated: 0,
-            device_type: CavroDeviceType::XYZ,
+        }
+    }
+
+    pub fn new(message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>) -> CavroMessage {
+        CavroMessage {
+            error_code: ErrorCode::NoError,
+            message_data,
+            vrc: 0,
+            vrc_calculated: 0,
         }
     }
 
@@ -200,8 +205,7 @@ impl CavroMessage {
             // but, in case it isn't checking, return an error
             return Err(ErrorCode::InvalidCommand)
         }
-
-        let device_type = if message_data[1] == 0x38 {CavroDeviceType::XYZ} else {CavroDeviceType::PUMP};
+        
         let vrc = message_data[msg_len - 1];
         // check the vrc
         let (_end, data_no_vrc) = message_data.split_last().unwrap();
@@ -218,7 +222,6 @@ impl CavroMessage {
             message_data,
             vrc,
             vrc_calculated,
-            device_type,
         })
     }
 
@@ -263,19 +266,12 @@ pub struct XYZTransaction {
     pub rsp_ack: XYZMessage,
 }
 
-#[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, PartialEq, Clone)]
 pub struct PumpCommand {
     pub error_code: ErrorCode,
     pub pump_address: u8,
     pub sequence_num: u8,
     pub message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>,
-}
-
-#[cfg(feature = "embedded")]
-impl defmt::Format for PumpCommand {
-    fn format(&self, _fmt: defmt::Formatter) {
-    }
 }
 
 impl PumpCommand {
@@ -332,12 +328,6 @@ pub struct PumpResponse {
     pub master_adr: u8,
     pub status: u8,
     pub message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>,
-}
-
-#[cfg(feature = "embedded")]
-impl defmt::Format for PumpResponse {
-    fn format(&self, _fmt: defmt::Formatter) {
-    }
 }
 
 impl PumpResponse {

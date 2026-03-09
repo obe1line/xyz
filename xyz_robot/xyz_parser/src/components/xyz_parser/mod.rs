@@ -173,8 +173,7 @@ mod parser_tests {
     #[test]
     fn test_parser_invalid_start_byte() {
         let mut parser = CavroMessageParser::new();
-        let data = [0x02, 0x01, '1' as u8, '1' as u8, 0x04, 0x05, 0x03, 0x06]; // valid looking but we want to test skip
-        // parser.add_data([0x01...])
+        let data = [0x02, 0x01, '1' as u8, '1' as u8, 0x04, 0x05, 0x03, 0x06];
         let bad_data = [0x01, 0x01];
         parser.add_data(&bad_data, bad_data.len());
         parser.add_data(&data, data.len());
