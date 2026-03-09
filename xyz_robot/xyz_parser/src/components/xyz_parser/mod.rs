@@ -211,7 +211,7 @@ mod parser_tests {
 
         let msg1: CavroMessage = parser.parse();
         assert_eq!(msg1.error_code, ErrorCode::NoError);
-        let cmd1: XYZMessage = XYZMessage::decode(msg1);
+        let cmd1: XYZMessage = XYZMessage::decode(msg1.message_data.clone());
         assert_eq!(cmd1.device_address, 0x07);
         assert_eq!(cmd1.control, 0x41);
 
@@ -349,8 +349,8 @@ mod parser_tests {
                 '5' as u8, '0' as u8, '0' as u8, ' ' as u8,
                 '7' as u8, '0' as u8, '0' as u8, 0x03, 0x41]).unwrap();
 
-        let msg = CavroMessage::decode(message_data);
-        let xyz = XYZMessage::decode(msg);
+        let msg = CavroMessage::decode(message_data).ok().unwrap();
+        let xyz = XYZMessage::decode(msg.message_data.clone());
         let command = XYZCommand::decode(xyz);
         assert_eq!(command.error_code, ErrorCode::NoError);
         assert_eq!(command.cmd, "PA");
