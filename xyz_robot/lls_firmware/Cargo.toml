@@ -14,8 +14,8 @@ cortex-m-rt = { version = "0.7.5", optional = true }
 defmt = { version = "1.0.0", optional = true }
 defmt-rtt = { version = "1.0.0", features = ["disable-blocking-mode"], optional = true }
 panic-probe = { version = "1.0.0", features = ["print-defmt"], optional = true }    # panic message will be printed via defmt
-heapless = { version = "0.9.1", features = ["defmt"], optional = true }
-embassy-stm32 = { version = "0.4.0", features = [ "defmt", "time-driver-any", "stm32c071rb", "memory-x", "unstable-pac", "exti", "chrono"], optional = true }
+heapless = { version = "0.9.2", features = ["defmt"], optional = true }
+embassy-stm32 = { version = "0.5.0", features = [ "defmt", "time-driver-any", "stm32c071rb", "memory-x", "unstable-pac", "exti", "chrono"], optional = true }
 embassy-sync = { version = "0.7.2", features = ["defmt"], optional = true }
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "defmt"], optional = true }
 embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"], optional = true }

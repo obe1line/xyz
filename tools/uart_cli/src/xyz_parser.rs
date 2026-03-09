@@ -72,19 +72,19 @@ impl XYZMessage {
     }
 }
 
-impl XYZMessage {
-    pub fn new(error_code: ErrorCode, control: u8, arm_adr: u8, device_adr: u8, 
-               message: Vec<u8, 255>, vrc: u8) -> XYZMessage {
-        XYZMessage {
-            error_code,
-            control,
-            arm_adr,
-            device_adr,
-            message,
-            vrc
-        }
-    }
-}
+// impl XYZMessage {
+//     pub fn new(error_code: ErrorCode, control: u8, arm_adr: u8, device_adr: u8,
+//                message: Vec<u8, 255>, vrc: u8) -> XYZMessage {
+//         XYZMessage {
+//             error_code,
+//             control,
+//             arm_adr,
+//             device_adr,
+//             message,
+//             vrc
+//         }
+//     }
+// }
 
 impl XYZMessage {
     fn new_error(err: ErrorCode) -> XYZMessage {

@@ -17,6 +17,7 @@ use {
     embassy_stm32::usart::{UartTx, UartRx},
     embassy_stm32::spi::Spi,
     embassy_stm32::mode::Blocking,
+    embassy_stm32::spi::mode::Master,
     heapless::Vec,
     panic_probe as _,
 };
@@ -610,10 +611,10 @@ impl MotorController for XMotorController {
 }
 
 struct XYZStepperController {
-    spi: Spi<'static, Blocking>,
+    spi: Spi<'static, Blocking, Master>,
 }
 impl XYZStepperController {
-    fn new(spi: Spi<'static, Blocking>) -> Self {
+    fn new(spi: Spi<'static, Blocking, Master>) -> Self {
         Self {
             spi,
         }

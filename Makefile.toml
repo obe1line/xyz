@@ -8,6 +8,11 @@ dependencies = [
     { name = "full", path="xyz_robot" }
 ]
 
+[tasks.wip]
+dependencies = [
+    { name = "full", path="xyz_robot/x_firmware" }
+]
+
 [tasks.full]
 dependencies = ["tools",
     "xyz_robot_full",

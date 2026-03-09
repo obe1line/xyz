@@ -11,6 +11,9 @@ args = ["clean"]
 command = "cargo"
 args = ["build", "--color=always", "--features=embedded-rtt", "--target=thumbv7em-none-eabihf"]
 
+[tasks.build_clean_fw]
+dependencies = ["clean", "build_fw"]
+
 # unit tests for different OS targets
 [tasks.unit_test]
 linux_alias = "unit_test_linux"
