@@ -24,6 +24,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install firmware toolchains
+        run: rustup target add thumbv6m-none-eabi && rustup target add thumbv7em-none-eabihf
+
       - name: Install cargo-make
         uses: davidB/rust-cargo-make@v1
 
