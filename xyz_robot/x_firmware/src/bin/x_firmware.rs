@@ -207,7 +207,13 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
         // send ack upstream as we are now processing the message content
         let ack_xyz = XYZMessage::new_ack(xyz.arm_address, xyz.device_address);
         let ack_message = CavroMessage::new(ack_xyz.encode());
-        upstream_outgoing.try_send(ack_message).unwrap();
+        info!("Sending upstream ACK data: {:?}", ack_message.encode());
+        let result = upstream_outgoing.try_send(ack_message);
+        if result.is_err() {
+            error!("Error sending ACK upstream")
+        } else {
+            info!("Sending ACK upstream");
+        }
 
         // pump command?
         if xyz.is_pump_device() {
@@ -264,7 +270,6 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
         match command.cmd.as_str() {
             "RV" => {
                 validate_params!(command.num_params, 0);
-                info!("Sending ACK upstream");
                 let xyz_response = XYZMessage::create_answer(&xyz, Vec::from_slice(b"242").unwrap(), 0);
                 let response_message = CavroMessage::new(xyz_response.encode());
                 OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
@@ -477,9 +482,9 @@ async fn upstream_message_receiver(
             info!("{}", buffer[0..n]);
             parser.add_data(&buffer, n);
             let cavro = parser.parse();
-            let message = XYZMessage::decode(cavro.message_data.clone());
-            info!("Message parser error code: {:?}", message.error_code);
-            if message.error_code == xyz_parser::ErrorCode::NoError {
+            info!("Cavro parser error code: {:?}", cavro.error_code);
+            if cavro.error_code == xyz_parser::ErrorCode::NoError {
+                let message = XYZMessage::decode(cavro.message_data.clone());
                 if message.control == XYZMessage::ACK {
                     info!("Received ACK message on upstream - ignoring for now");
                     continue;
@@ -524,9 +529,9 @@ async fn downstream_message_receiver(
             info!("{}", buffer[0..n]);
             parser.add_data(&buffer, n);
             let cavro = parser.parse();
-            let xyz = XYZMessage::decode(cavro.message_data);
-            info!("Message parser error code: {:?}", xyz.error_code);
-            if xyz.error_code == xyz_parser::ErrorCode::NoError {
+            info!("Cavro parser error code: {:?}", cavro.error_code);
+            if cavro.error_code == xyz_parser::ErrorCode::NoError {
+                let xyz = XYZMessage::decode(cavro.message_data);
                 if xyz.control == XYZMessage::ACK {
                     info!("Received ACK message on downstream - ignoring as already acknowledged by upstream receiver");
                 }
@@ -566,6 +571,7 @@ async fn upstream_message_sender(
 async fn pump_message_sender(
     mut rs485_enable: Output<'static>,
     mut pump_rs485_tx: UartTx<'static, Async>,
+    mut pump_rs485_rx: UartRx<'static, Async>,
     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
 ) -> ! {
     loop {
@@ -575,9 +581,14 @@ async fn pump_message_sender(
         rs485_enable.set_high();
         pump_rs485_tx.blocking_write(&message_bytes).expect("TODO: panic message");
         pump_rs485_tx.blocking_flush().expect("TODO: panic message");
-        rs485_enable.set_low();
         pump_rs485_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to RS485");
-        info!("Sent message to pump RS485: {}", message);
+        info!("Sent message to pump RS485: {}", message_bytes);
+
+        // receive ack and response
+        rs485_enable.set_low();
+        let mut buffer = [0u8; 64];
+        let pump_reply = pump_rs485_rx.read(&mut buffer).await;
+        info!("pump: ok: {:?} rcv: {:?}", pump_reply.is_ok(), buffer);
     }
 }
 
@@ -774,7 +785,7 @@ async fn main(spawner: Spawner) {
         p.DMA2_CH6, // TX DMA
         p.DMA2_CH1, // RX DMA
         uart_config()).expect("Failed to configure uart");
-    let (pump_tx, _pump_rx) = usart6.split();
+    let (pump_tx, pump_rx) = usart6.split();
 
     // RS485 enable pin is on PC14
     let rs485_enable = Output::new(p.PC14, Level::Low, Speed::Low);
@@ -860,7 +871,7 @@ async fn main(spawner: Spawner) {
                                           OUT_UPSTREAM_MSG_CHANNEL.receiver())).unwrap();
 
     info!("Starting message sender task... pump");
-    spawner.spawn(pump_message_sender(rs485_enable, pump_tx,
+    spawner.spawn(pump_message_sender(rs485_enable, pump_tx, pump_rx,
                                       OUT_PUMP_MSG_CHANNEL.receiver())).unwrap();
 
     info!("Starting message sender task...downstream");
