@@ -200,10 +200,6 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
         let cavro = receiver.receive().await;
         let xyz = XYZMessage::decode(cavro.message_data.clone());
 
-        if xyz.device_address != 0x38 {
-            // forward the pump command
-        }
-
         // send ack upstream as we are now processing the message content
         let ack_xyz = XYZMessage::new_ack(xyz.arm_address, xyz.device_address);
         let ack_message = CavroMessage::new(ack_xyz.encode());
@@ -217,7 +213,8 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
 
         // pump command?
         if xyz.is_pump_device() {
-            let pump_command = PumpCommand::decode(xyz.message_data.clone());
+            info!("Received pump message from upstream");
+            let pump_command = PumpCommand::decode_from_xyz(xyz);
             // send to the pump channel
             let pump_cavro_message = CavroMessage::new(pump_command.encode());
             pump_outgoing.try_send(pump_cavro_message).unwrap();
@@ -272,14 +269,17 @@ async fn upstream_message_handler_task(power_step_controller: &'static mut Power
                 validate_params!(command.num_params, 0);
                 let xyz_response = XYZMessage::create_answer(&xyz, Vec::from_slice(b"242").unwrap(), 0);
                 let response_message = CavroMessage::new(xyz_response.encode());
-                OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
+                let result = upstream_outgoing.try_send(response_message);
+                if result.is_err() {
+                    error!("Error sending RV response");
+                }
             }
-            "&" => {
-                // Pump version command
-                let xyz_response = XYZMessage::create_answer(&xyz, Vec::from_slice(b"XL-3000 Hi Res 8 port April 1996 P/N 726950_B").unwrap(), 0);
-                let response_message = CavroMessage::new(xyz_response.encode());
-                OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
-            }
+            // "&" => {
+            //     // Pump version command
+            //     let xyz_response = XYZMessage::create_answer(&xyz, Vec::from_slice(b"XL-3000 Hi Res 8 port April 1996 P/N 726950_B").unwrap(), 0);
+            //     let response_message = CavroMessage::new(xyz_response.encode());
+            //     OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
+            // }
             "PA" => {
                 wait_for_motor(X_MOTOR_DEVICE_ID, power_step_controller);
                 // TODO: set control bit 7 to indicate an internal command where the response is not sent upstream
@@ -587,7 +587,7 @@ async fn pump_message_sender(
         // receive ack and response
         rs485_enable.set_low();
         let mut buffer = [0u8; 64];
-        let pump_reply = pump_rs485_rx.read(&mut buffer).await;
+        let pump_reply = pump_rs485_rx.blocking_read(&mut buffer);
         info!("pump: ok: {:?} rcv: {:?}", pump_reply.is_ok(), buffer);
     }
 }
@@ -846,8 +846,8 @@ async fn main(spawner: Spawner) {
 
     info!("Starting upstream message handler task...");
     spawner.spawn(upstream_message_handler_task(power_ctrl, motor1_home, motor_status_24v,
-                                                OUT_UPSTREAM_MSG_CHANNEL.sender(),
                                                 OUT_PUMP_MSG_CHANNEL.sender(),
+                                                OUT_UPSTREAM_MSG_CHANNEL.sender(),
                                                 )).unwrap();
 
     // TODO: pump message handler

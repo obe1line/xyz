@@ -10,7 +10,7 @@ dependencies = [
 
 [tasks.wip]
 dependencies = [
-    { name = "full", path="xyz_robot/yz_firmware" }
+    { name = "full", path="xyz_robot/x_firmware" }
 ]
 
 [tasks.full]

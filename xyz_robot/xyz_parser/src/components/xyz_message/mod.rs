@@ -297,7 +297,18 @@ impl PumpCommand {
             message_data: Vec::new(),
         }
     }
-    
+
+    pub fn decode_from_xyz(xyz: XYZMessage) -> PumpCommand {
+        let pump_address = xyz.device_address;
+        let sequence_num = 0x31;
+        PumpCommand {
+            error_code: ErrorCode::NoError,
+            pump_address,
+            sequence_num,
+            message_data: xyz.message_data,
+        }
+    }
+
     pub fn decode(message_data: Vec<u8, { CavroMessage::MESSAGE_BUFFER_SIZE }>) -> PumpCommand {
         let (header, data) = message_data.split_first_chunk::<2>().unwrap();
         let pump_address = header[0];
