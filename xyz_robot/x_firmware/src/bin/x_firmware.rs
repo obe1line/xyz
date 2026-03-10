@@ -587,8 +587,16 @@ async fn pump_message_sender(
         // receive ack and response
         rs485_enable.set_low();
         let mut buffer = [0u8; 64];
-        let pump_reply = pump_rs485_rx.blocking_read(&mut buffer);
-        info!("pump: ok: {:?} rcv: {:?}", pump_reply.is_ok(), buffer);
+        let mut data_len = 0;
+        while data_len == 0 {
+            let pump_reply = pump_rs485_rx.read_until_idle(&mut buffer).await;
+            if pump_reply.is_ok() {
+                data_len = pump_reply.unwrap();
+            } else {
+                info!("Waiting for pump ack");
+            }
+            info!("pump: ok: {:?} len: {:?} rcv: {:?}", pump_reply.is_ok(), data_len, buffer[0..data_len]);
+        }
     }
 }
 
