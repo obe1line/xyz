@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{CavroMessage, CavroMessageParser, XYZMessage, XYZCommand, PumpCommand};
+use xyz_parser::{CavroMessage, CavroMessageParser, XYZMessage, XYZCommand, PumpCommand, ErrorCode};
 use fixed::types::extra::U3;
 
 #[cfg(feature = "embedded")]
@@ -27,7 +27,7 @@ use defmt_rtt as _;
 
 #[cfg(feature = "embedded-serial")]
 use defmt_serial as _;
-
+use embassy_time::WithTimeout;
 #[cfg(not(feature = "embedded"))]
 use {
     log::{error, info},
@@ -562,7 +562,7 @@ async fn upstream_message_sender(
         let message = receiver.receive().await;
         let message_bytes = message.encode();
         upstream_usart_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to UART");
-        info!("Sent message to upstream UART: {}", message);
+        info!("Sent message to upstream UART: {=[u8]:x}", message_bytes);
     }
 }
 
@@ -573,30 +573,45 @@ async fn pump_message_sender(
     mut pump_rs485_tx: UartTx<'static, Async>,
     mut pump_rs485_rx: UartRx<'static, Async>,
     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
+    outgoing_upstream: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
     loop {
-        let message = receiver.receive().await;
-        let message_bytes = message.encode();
-        // set the RS485 enable pin high to transmit and then low to receive again.
+        // set to sending to prevent data loss
         rs485_enable.set_high();
-        pump_rs485_tx.blocking_write(&message_bytes).expect("TODO: panic message");
-        pump_rs485_tx.blocking_flush().expect("TODO: panic message");
-        pump_rs485_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to RS485");
-        info!("Sent message to pump RS485: {}", message_bytes);
+
+        let message_receiver = receiver.receive().with_timeout(Duration::from_millis(10)).await;
+        if message_receiver.is_ok() {
+            let message = message_receiver.unwrap();
+            let message_bytes = message.encode();
+            // set the RS485 enable pin high to transmit and then low to receive again.
+            pump_rs485_tx.blocking_write(&message_bytes).expect("TODO: panic message");
+            pump_rs485_tx.blocking_flush().expect("TODO: panic message");
+            pump_rs485_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to RS485");
+            info!("Sent message to pump RS485: {=[u8]:x}", message_bytes);
+        }
 
         // receive ack and response
-        rs485_enable.set_low();
         let mut buffer = [0u8; 64];
         let mut data_len = 0;
         while data_len == 0 {
-            let pump_reply = pump_rs485_rx.read_until_idle(&mut buffer).await;
+            let pump_reader = pump_rs485_rx.read_until_idle(&mut buffer);
+            rs485_enable.set_low();
+            let pump_reply = pump_reader.await;
+            rs485_enable.set_high();
             if pump_reply.is_ok() {
                 data_len = pump_reply.unwrap();
             } else {
-                info!("Waiting for pump ack");
+                info!("Waiting for pump responses");
             }
-            info!("pump: ok: {:?} len: {:?} rcv: {:?}", pump_reply.is_ok(), data_len, buffer[0..data_len]);
+            info!("pump: ok: {:?} len: {:?} rcv: {=[u8]:x}", pump_reply.is_ok(), data_len, buffer[0..data_len]);
         }
+
+        // send a response to xyz
+        let data = Vec::from_slice(buffer[0..data_len].iter().as_slice()).unwrap();
+        let ctrl = 0x41;    // 0x40 + seq(1)
+        let xyz = XYZMessage::new(ErrorCode::NoError, ctrl, 0x31, 0x31, data);
+        let cavro = CavroMessage::new(xyz.message_data);
+        outgoing_upstream.try_send(cavro).expect("Failed to send pump response upstream");
     }
 }
 
@@ -880,7 +895,8 @@ async fn main(spawner: Spawner) {
 
     info!("Starting message sender task... pump");
     spawner.spawn(pump_message_sender(rs485_enable, pump_tx, pump_rx,
-                                      OUT_PUMP_MSG_CHANNEL.receiver())).unwrap();
+                                      OUT_PUMP_MSG_CHANNEL.receiver(),
+                                      OUT_UPSTREAM_MSG_CHANNEL.sender())).unwrap();
 
     info!("Starting message sender task...downstream");
     spawner.spawn(downstream_message_sender(downstream_tx,
