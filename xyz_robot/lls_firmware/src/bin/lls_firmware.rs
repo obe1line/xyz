@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+use heapless::Vec;
 use core::fmt;
 use cortex_m::prelude::_embedded_hal_blocking_serial_Write;
 use defmt::{info, error};
@@ -15,11 +16,14 @@ use embassy_stm32::usart::{Uart, UartRx, UartTx};
 use embassy_time::{Duration, Timer};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use xyz_parser::{CavroMessage, XYZMessage};
+use heapless::String;
+use xyz_parser::{CavroMessage, XYZCommand, XYZMessage};
 use {defmt_rtt as _, panic_probe as _};
 
 const IN_CHANNEL_MSG_SIZE: usize = 8;
+const OUT_CHANNEL_MSG_SIZE: usize = 8;
 static IN_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
+static OUT_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE> = Channel::new();
 
 #[cfg(feature = "embedded")]
 #[embassy_executor::task(pool_size = 1)]
@@ -43,9 +47,24 @@ async fn message_handler_task() -> ! {
     let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
     loop {
         let cavro = receiver.receive().await;
-        let xyz = XYZMessage::decode(cavro.message_data);
+        let xyz = XYZMessage::decode(cavro.message_data.clone());
         info!("LLS received message: {:?}", xyz);
         // TODO: implement LLS specific command handling
+
+        let command = XYZCommand::decode(xyz);
+        match command.cmd.as_str() {
+            "RV" => {
+            },
+            _ => {
+                info!("Unknown command: {}", command.cmd.as_str());
+                info!("HACK - sending response regardless");
+                // TODO: blank response for now
+                let xyz = XYZMessage::decode(cavro.message_data.clone());
+                let response_xyz = XYZMessage::create_answer(&xyz, Vec::new(), 0);
+                let response_message = CavroMessage::new(response_xyz.encode());
+                OUT_UPSTREAM_MSG_CHANNEL.sender().try_send(response_message).unwrap();
+            },
+        }
     }
 }
 
