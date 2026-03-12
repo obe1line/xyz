@@ -11,10 +11,14 @@ log = { version = "0.4.28", optional = true }
 defmt = { version = "1.0.1", optional = true }
 simple-mermaid = "0.2.0"
 itoa = { version = "1.0.15" }
+embassy-stm32 = { version = "0.5.0", features = ["defmt", "unstable-pac"], optional = true }
+embassy-sync = { version = "0.7.2", features = ["defmt"], optional = true }
 
 [features]
 default = []
-embedded = ["defmt"]
+embedded = ["defmt", "embassy-stm32", "embassy-sync"]
+stm32f405 = ["embassy-stm32/stm32f405rg"]
+stm32c071 = ["embassy-stm32/stm32c071rb"]
 std = ["log"]
 test = ["std"]
 

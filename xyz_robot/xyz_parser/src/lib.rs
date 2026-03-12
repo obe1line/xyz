@@ -2,6 +2,8 @@
 pub mod components;
 pub use crate::components::xyz_parser::{CavroMessageParser};
 pub use crate::components::xyz_message::{XYZMessage, XYZCommand, ErrorCode, CavroMessage, PumpCommand};
+#[cfg(feature = "embedded")]
+pub use crate::components::receiver::{common_message_receiver};
 
 use core::*;
 

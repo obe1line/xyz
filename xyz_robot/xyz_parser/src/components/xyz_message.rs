@@ -257,7 +257,7 @@ impl CavroMessage {
 /// - `rsp_message`: The response message received.
 /// - `rsp_ack`: The acknowledgment for the response message.
 ///
-#[doc = mermaid!("../../../diagrams/xyz_messages.mermaid")]
+#[doc = mermaid!("../../diagrams/xyz_messages.mermaid")]
 pub struct XYZTransaction {
     pub arm_address: u8,
     pub device_address: u8,
@@ -366,7 +366,7 @@ impl PumpResponse {
 /// Fields:
 /// - `cavro`: The underlying Cavro message.
 /// - `arm_adr`: The arm address byte.
-#[doc = mermaid!("../../../diagrams/xyz_binary_packet.mermaid")]
+#[doc = mermaid!("../../diagrams/xyz_binary_packet.mermaid")]
 #[cfg_attr(feature = "embedded", derive(Format))]
 #[derive(Debug, Default)]
 pub struct XYZMessage {

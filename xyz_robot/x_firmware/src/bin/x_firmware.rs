@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{CavroMessage, CavroMessageParser, XYZMessage, XYZCommand, PumpCommand, ErrorCode};
+use xyz_parser::{CavroMessage, XYZMessage, XYZCommand, PumpCommand, ErrorCode};
 use fixed::types::extra::U3;
 
 #[cfg(feature = "embedded")]
@@ -462,94 +462,31 @@ async fn upstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
     processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
-    let mut rx_dma_buf = [0u8; 256];
-    let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
-    let mut buffer = [0u8; 64];
-    let mut parser = CavroMessageParser::new();
-
-    loop {
-        info!("Reading from upstream UART");
-        let n: usize = match ring_rx.read(&mut buffer).await {
-            Ok(n) => {n}
-            Err(_e) => {
-                error!("Error reading from upstream UART");
-                continue
-            }
-        };
-        if n > 0 {
-            info!("Read {} bytes from upstream UART", n);
-            // dump the buffer
-            info!("{}", buffer[0..n]);
-            parser.add_data(&buffer, n);
-            let cavro = parser.parse();
-            info!("Cavro parser error code: {:?}", cavro.error_code);
-            if cavro.error_code == xyz_parser::ErrorCode::NoError {
-                let message = XYZMessage::decode(cavro.message_data.clone());
-                if message.control == XYZMessage::ACK {
-                    info!("Received ACK message on upstream - ignoring for now");
-                    continue;
-                }
-                
-                // process the message in another task, which sends an ack and response when done
-                info!("Queuing upstream message for processing");
-                let cavro_message = CavroMessage::new(message.encode());
-                if let Err(e) = processing.try_send(cavro_message) {
-                    info!("Failed to send message to channel: {:?}", e);
-                }
-            }
-        }
-    }
+    xyz_parser::common_message_receiver::<IN_CHANNEL_MSG_SIZE, OUT_CHANNEL_MSG_SIZE>(
+        "upstream",
+        usart_rx,
+        processing,
+        true,
+        None,
+        None,
+    ).await
 }
 
 #[cfg(feature = "embedded")]
 #[embassy_executor::task(pool_size = 1)]
 async fn downstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
-    // processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, XYZMessage, IN_CHANNEL_MSG_SIZE>,
     outgoing_downstream: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
     outgoing_upstream: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
-    let mut rx_dma_buf = [0u8; 256];
-    let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
-    let mut buffer = [0u8; 64];
-    let mut parser = CavroMessageParser::new();
-
-    loop {
-        info!("Reading from downstream UART");
-        let n: usize = match ring_rx.read(&mut buffer).await {
-            Ok(n) => {n}
-            Err(_e) => {
-                error!("Error reading from downstream UART");
-                continue
-            }
-        };
-        if n > 0 {
-            info!("Read {} bytes from downstream UART", n);
-            // dump the buffer
-            info!("{}", buffer[0..n]);
-            parser.add_data(&buffer, n);
-            let cavro = parser.parse();
-            info!("Cavro parser error code: {:?}", cavro.error_code);
-            if cavro.error_code == xyz_parser::ErrorCode::NoError {
-                let xyz = XYZMessage::decode(cavro.message_data);
-                if xyz.control == XYZMessage::ACK {
-                    info!("Received ACK message on downstream - ignoring as already acknowledged by upstream receiver");
-                }
-                else {
-                    // we have an answer from downstream - send ack to downstream and pass upstream
-                    info!("Queuing ACK for downstream");
-                    let ack_xyz = XYZMessage::new_ack(xyz.arm_address, xyz.device_address);
-                    let ack_message = CavroMessage::new(ack_xyz.encode());
-                    outgoing_downstream.try_send(ack_message).unwrap();
-
-                    // pass the response upstream
-                    info!("Queuing message for upstream");
-                    let up_message = CavroMessage::new(xyz.encode());
-                    outgoing_upstream.try_send(up_message).unwrap();
-                }
-            }
-        }
-    }
+    xyz_parser::common_message_receiver::<IN_CHANNEL_MSG_SIZE, OUT_CHANNEL_MSG_SIZE>(
+        "downstream",
+        usart_rx,
+        IN_DOWNSTREAM_MSG_CHANNEL.sender(),
+        false,
+        Some(outgoing_downstream),
+        Some(outgoing_upstream),
+    ).await
 }
 
 #[cfg(feature = "embedded")]

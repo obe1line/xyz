@@ -11,9 +11,43 @@ use embassy_stm32::interrupt;
 use embassy_stm32::gpio::{Output, Level, Speed, Pull};
 use embassy_stm32::i2c::{I2c};
 use embassy_stm32::mode::{Async, Blocking};
-use embassy_stm32::usart::Uart;
+use embassy_stm32::usart::{Uart, UartRx, UartTx};
 use embassy_time::{Duration, Timer};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
+use xyz_parser::{CavroMessage, XYZMessage};
 use {defmt_rtt as _, panic_probe as _};
+
+const IN_CHANNEL_MSG_SIZE: usize = 8;
+static IN_UPSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE> = Channel::new();
+
+#[cfg(feature = "embedded")]
+#[embassy_executor::task(pool_size = 1)]
+async fn upstream_message_receiver(
+    usart_rx: UartRx<'static, Async>,
+    processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
+) -> ! {
+    xyz_parser::common_message_receiver::<IN_CHANNEL_MSG_SIZE, 0>(
+        "upstream",
+        usart_rx,
+        processing,
+        true,
+        None,
+        None,
+    ).await
+}
+
+#[cfg(feature = "embedded")]
+#[embassy_executor::task(pool_size = 1)]
+async fn message_handler_task() -> ! {
+    let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
+    loop {
+        let cavro = receiver.receive().await;
+        let xyz = XYZMessage::decode(cavro.message_data);
+        info!("LLS received message: {:?}", xyz);
+        // TODO: implement LLS specific command handling
+    }
+}
 
 bind_interrupts!(struct IrqsI2C1 {
     I2C1 => i2c::ErrorInterruptHandler<peripherals::I2C1>,
@@ -84,8 +118,12 @@ async fn main(spawner: Spawner) {
     cfg1.data_bits= usart::DataBits::DataBits8;
     cfg1.parity = usart::Parity::ParityNone;
     cfg1.stop_bits = usart::StopBits::STOP1;
-    let mut uart1 = usart::Uart::new(p.USART1, uart1_rx, uart1_tx,
+    let uart1 = usart::Uart::new(p.USART1, uart1_rx, uart1_tx,
                                      uart1_irq, tx1_dma, rx1_dma, cfg1).expect("uart1 failed");
+    let (_uart1_tx, uart1_rx) = uart1.split();
+
+    spawner.spawn(upstream_message_receiver(uart1_rx, IN_UPSTREAM_MSG_CHANNEL.sender())).unwrap();
+    spawner.spawn(message_handler_task()).unwrap();
 
     // UART2 setup
     let uart2_tx = p.PA2;
@@ -104,7 +142,7 @@ async fn main(spawner: Spawner) {
     Timer::after_secs(10).await;
 
     let version = "LLS v0.1.1";
-    uart_msg(&mut uart1, format_args!("{} started\r\n", version)).await;
+    // uart_msg(&mut uart1, format_args!("{} started\r\n", version)).await;
     uart_dbg(&mut uart2, format_args!("{} started\r\n", version)).await;
 
     // release notes
@@ -118,7 +156,7 @@ async fn main(spawner: Spawner) {
     for addr in 0..=127 {
         if let Ok(_) = i2c1.write(addr, &[0]).await {
             info!("Found I2C device at address: 0x{:02x}", addr);
-            uart_msg(&mut uart1, format_args!("Found I2C device at address: 0x{:02x}\r\n", addr)).await;
+            // uart_msg(&mut uart1, format_args!("Found I2C device at address: 0x{:02x}\r\n", addr)).await;
             uart_dbg(&mut uart2, format_args!("Found I2C device at address: 0x{:02x}\r\n", addr)).await;
         }
     }
@@ -239,7 +277,7 @@ async fn main(spawner: Spawner) {
     let mut count: u32 = 0;
     loop {
         count += 1;
-        uart_msg(&mut uart1, format_args!("Count: {}\r\n", count)).await;
+        // uart_msg(&mut uart1, format_args!("Count: {}\r\n", count)).await;
         uart_dbg(&mut uart2, format_args!("Count: {}\r\n", count)).await;
 
         // Wait for the data ready interrupt to trigger

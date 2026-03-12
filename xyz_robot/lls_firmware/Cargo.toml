@@ -20,10 +20,12 @@ embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime
 format_no_std = { version = "1.2.0", optional = true }
 embassy-futures = { version = "0.1.1", optional = true }
 
+xyz_parser = { path = "../xyz_parser", optional = true }
+
 [features]
 default = ["embedded"]
 embedded = ["cortex-m", "cortex-m-rt", "embassy-executor", "embassy-stm32", "embassy-sync",
-    "embassy-time", "embassy-futures", "heapless", "panic-probe", "defmt", "defmt-rtt", "format_no_std"]
+    "embassy-time", "embassy-futures", "heapless", "panic-probe", "defmt", "defmt-rtt", "format_no_std", "xyz_parser/embedded"]
 
 [[bin]]
 name = "lls_firmware"

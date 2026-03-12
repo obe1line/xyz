@@ -9,11 +9,11 @@ args = ["clean"]
 
 [tasks.build_fw_f405]
 command = "cargo"
-args = ["build", "--color=always", "--features=embedded", "--target=thumbv7em-none-eabihf"]
+args = ["build", "--color=always", "--features=embedded,stm32f405", "--target=thumbv7em-none-eabihf"]
 
 [tasks.build_fw_c071]
 command = "cargo"
-args = ["build", "--color=always", "--features=embedded", "--target=thumbv6m-none-eabi"]
+args = ["build", "--color=always", "--features=embedded,stm32c071", "--target=thumbv6m-none-eabi"]
 
 # unit tests for different OS targets
 [tasks.unit_test]

@@ -336,41 +336,14 @@ async fn downstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
     processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
-    let mut rx_dma_buf = [0u8; 256];
-    let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
-    let mut buffer = [0u8; 64];
-    let mut parser = CavroMessageParser::new();
-
-    loop {
-        info!("Reading from UART");
-        let n: usize = match ring_rx.read(&mut buffer).await {
-            Ok(n) => {n}
-            Err(_e) => {
-                error!("Error reading from UART");
-                continue
-            }
-        };
-        if n > 0 {
-            info!("Read {} bytes from UART", n);
-            parser.add_data(&buffer, n);
-            let cavro = parser.parse();
-            info!("Message parser error code: {:?}", cavro.error_code);
-            if cavro.error_code == xyz_parser::ErrorCode::NoError {
-                let xyz = XYZMessage::decode(cavro.message_data.clone());
-                if xyz.control == XYZMessage::ACK {
-                    info!("Received ACK message - ignoring for now");
-                    continue;
-                }
-
-                // process the message in another task, which sends an ack and response when done
-                info!("Queuing upstream message for processing");
-                let cavro_msg = CavroMessage::new(xyz.encode());
-                if let Err(e) = processing.try_send(cavro_msg) {
-                    info!("Failed to send message to channel: {:?}", e);
-                }
-            }
-        }
-    }
+    xyz_parser::common_message_receiver::<IN_CHANNEL_MSG_SIZE, 0>(
+        "downstream",
+        usart_rx,
+        processing,
+        true,
+        None,
+        None,
+    ).await
 }
 
 #[cfg(feature = "embedded")]
@@ -379,41 +352,14 @@ async fn upstream_message_receiver(
     usart_rx: UartRx<'static, Async>,
     processing: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
 ) -> ! {
-    let mut rx_dma_buf = [0u8; 256];
-    let mut ring_rx = usart_rx.into_ring_buffered(&mut rx_dma_buf);
-    let mut buffer = [0u8; 64];
-    let mut parser = CavroMessageParser::new();
-
-    loop {
-        info!("Reading from UART");
-        let n: usize = match ring_rx.read(&mut buffer).await {
-            Ok(n) => {n}
-            Err(_e) => {
-                error!("Error reading from UART");
-                continue
-            }
-        };
-        if n > 0 {
-            info!("Read {} bytes from UART", n);
-            parser.add_data(&buffer, n);
-            let cavro = parser.parse();
-            info!("Message parser error code: {:?}", cavro.error_code);
-            if cavro.error_code == xyz_parser::ErrorCode::NoError {
-                let xyz = XYZMessage::decode(cavro.message_data);
-                if xyz.control == XYZMessage::ACK {
-                    info!("Received ACK message - ignoring for now");
-                    continue;
-                }
-
-                // process the message in another task, which sends an ack and response when done
-                info!("Queuing upstream message for processing");
-                let cavro_msg = CavroMessage::new(xyz.encode());
-                if let Err(e) = processing.try_send(cavro_msg) {
-                    info!("Failed to send message to channel: {:?}", e);
-                }
-            }
-        }
-    }
+    xyz_parser::common_message_receiver::<IN_CHANNEL_MSG_SIZE, 0>(
+        "upstream",
+        usart_rx,
+        processing,
+        true,
+        None,
+        None,
+    ).await
 }
 
 #[cfg(feature = "embedded")]
