@@ -16,8 +16,7 @@ use embassy_stm32::usart::{Uart, UartRx, UartTx};
 use embassy_time::{Duration, Timer};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use heapless::String;
-use xyz_parser::{CavroMessage, XYZCommand, XYZMessage};
+use xyz_parser::{CavroMessage, XYZCommand, XYZMessage, validate_params};
 use {defmt_rtt as _, panic_probe as _};
 
 const IN_CHANNEL_MSG_SIZE: usize = 8;
@@ -57,17 +56,28 @@ async fn upstream_message_sender(
 
 #[cfg(feature = "embedded")]
 #[embassy_executor::task(pool_size = 1)]
-async fn message_handler_task() -> ! {
+async fn message_handler_task(
+    outgoing_upstream: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, CavroMessage, IN_CHANNEL_MSG_SIZE>,
+) -> ! {
     let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
     loop {
         let cavro = receiver.receive().await;
         let xyz = XYZMessage::decode(cavro.message_data.clone());
         info!("LLS received message: {:?}", xyz);
-        // TODO: implement LLS specific command handling
+
+        // create a blank response to send
+        let mut xyz_response = XYZMessage::create_answer(&xyz, Vec::new(), 0);
 
         let command = XYZCommand::decode(xyz);
         match command.cmd.as_str() {
             "RV" => {
+                validate_params!(command.num_params, 0);
+                xyz_response.message_data = Vec::from_slice(b"242").unwrap();
+                let response_message = CavroMessage::new(xyz_response.encode());
+                let result = outgoing_upstream.try_send(response_message);
+                if result.is_err() {
+                    error!("Error sending RV response");
+                }
             },
             _ => {
                 info!("Unknown command: {}", command.cmd.as_str());
@@ -98,12 +108,14 @@ async fn heartbeat_task(mut led: Output<'static>) -> ! {
     }
 }
 
-async fn uart_msg(uart1: &mut Uart<'_, Async>, args: fmt::Arguments<'_>) {
-    let mut out_buffer: [u8; 64] = [0; 64];
-    let s = format_no_std::show(&mut out_buffer, args).expect("write buffer failed");
-    uart1.blocking_write(s.as_bytes()).expect("buffered write_all failed");
-    uart1.flush().await.expect("buffered flush failed");
-}
+// TODO: remove
+//
+// async fn uart_msg(uart1: &mut Uart<'_, Async>, args: fmt::Arguments<'_>) {
+//     let mut out_buffer: [u8; 64] = [0; 64];
+//     let s = format_no_std::show(&mut out_buffer, args).expect("write buffer failed");
+//     uart1.blocking_write(s.as_bytes()).expect("buffered write_all failed");
+//     uart1.flush().await.expect("buffered flush failed");
+// }
 
 async fn uart_dbg(uart2: &mut Uart<'_, Blocking>, args: fmt::Arguments<'_>) {
     let mut out_buffer: [u8; 64] = [0; 64];
@@ -157,7 +169,7 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(upstream_message_receiver(uart1_rx, IN_UPSTREAM_MSG_CHANNEL.sender())).unwrap();
     spawner.spawn(upstream_message_sender(uart1_tx, OUT_UPSTREAM_MSG_CHANNEL.receiver())).unwrap();
-    spawner.spawn(message_handler_task()).unwrap();
+    spawner.spawn(message_handler_task(OUT_UPSTREAM_MSG_CHANNEL.sender())).unwrap();
 
     // UART2 setup
     let uart2_tx = p.PA2;

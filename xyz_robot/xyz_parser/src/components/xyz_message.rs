@@ -43,6 +43,26 @@ pub enum CavroDeviceType {
     PUMP,
 }
 
+#[macro_export] macro_rules! validate_params{
+    ($params_len:expr, $expected_len:expr) => {
+        if $params_len != $expected_len {
+            error!("Invalid parameters for command");
+            // send back an error
+            continue;
+        }
+    };
+}
+
+#[macro_export] macro_rules! validate_position{
+    ($x:expr, $y:expr, $z:expr) => {
+        if $x > 10000u32 || $y > 10000u32 || $z > 2000u32 {
+            error!("Invalid position: {}, {}, {}", $x, $y, $z);
+            // send back an error
+            continue;
+        }
+    };
+}
+
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct XYZCommand {
     pub error_code: ErrorCode,

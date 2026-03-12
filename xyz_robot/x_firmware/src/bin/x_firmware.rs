@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{CavroMessage, XYZMessage, XYZCommand, PumpCommand, ErrorCode};
+use xyz_parser::{CavroMessage, XYZMessage, XYZCommand, PumpCommand, ErrorCode, validate_params, validate_position};
 use fixed::types::extra::U3;
 
 #[cfg(feature = "embedded")]
@@ -70,26 +70,6 @@ static OUT_DOWNSTREAM_MSG_CHANNEL: Channel<CriticalSectionRawMutex, CavroMessage
 
 // static ACK_SIGNAL: embassy_sync::signal::Signal<CriticalSectionRawMutex, bool> = embassy_sync::signal::Signal::new();
 // static ANSWER_SIGNAL: embassy_sync::signal::Signal<CriticalSectionRawMutex, bool> = embassy_sync::signal::Signal::new();
-
-macro_rules! validate_params{
-    ($params_len:expr, $expected_len:expr) => {
-        if $params_len != $expected_len {
-            error!("Invalid parameters for command");
-            // send back an error
-            continue;
-        }
-    };
-}
-
-macro_rules! validate_position{
-    ($x:expr, $y:expr, $z:expr) => {
-        if $x > 10000u32 || $y > 10000u32 || $z > 2000u32 {
-            error!("Invalid position: {}, {}, {}", $x, $y, $z);
-            // send back an error
-            continue;
-        }
-    };
-}
 
 // #[cfg(feature = "embedded")]
 // #[embassy_executor::task]

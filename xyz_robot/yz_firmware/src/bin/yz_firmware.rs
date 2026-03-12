@@ -1,7 +1,7 @@
 #![cfg_attr(feature="embedded", no_std, no_main)]
 
 use xyz_motor::{MotorController, StepperController, PowerStepControl, MOTOR_DIR_BACKWARD, MOTOR_DIR_FORWARD, MotorDirection};
-use xyz_parser::{XYZCommand, XYZMessage, CavroMessage, CavroMessageParser};
+use xyz_parser::{XYZCommand, XYZMessage, CavroMessage};
 use fixed::types::extra::U3;
 use embassy_stm32::spi::mode::Master;
 
