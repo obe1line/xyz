@@ -43,6 +43,20 @@ async fn upstream_message_receiver(
 
 #[cfg(feature = "embedded")]
 #[embassy_executor::task(pool_size = 1)]
+async fn upstream_message_sender(
+    mut usart_tx: UartTx<'static, Async>,
+    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, CavroMessage, OUT_CHANNEL_MSG_SIZE>,
+) -> ! {
+    loop {
+        let message = receiver.receive().await;
+        let message_bytes = message.encode();
+        usart_tx.write(message_bytes.as_slice()).await.expect("Failed to write message to UART");
+        info!("Sent message to upstream UART: {=[u8]:x}", message_bytes);
+    }
+}
+
+#[cfg(feature = "embedded")]
+#[embassy_executor::task(pool_size = 1)]
 async fn message_handler_task() -> ! {
     let receiver = IN_UPSTREAM_MSG_CHANNEL.receiver();
     loop {
@@ -139,9 +153,10 @@ async fn main(spawner: Spawner) {
     cfg1.stop_bits = usart::StopBits::STOP1;
     let uart1 = usart::Uart::new(p.USART1, uart1_rx, uart1_tx,
                                      uart1_irq, tx1_dma, rx1_dma, cfg1).expect("uart1 failed");
-    let (_uart1_tx, uart1_rx) = uart1.split();
+    let (uart1_tx, uart1_rx) = uart1.split();
 
     spawner.spawn(upstream_message_receiver(uart1_rx, IN_UPSTREAM_MSG_CHANNEL.sender())).unwrap();
+    spawner.spawn(upstream_message_sender(uart1_tx, OUT_UPSTREAM_MSG_CHANNEL.receiver())).unwrap();
     spawner.spawn(message_handler_task()).unwrap();
 
     // UART2 setup
